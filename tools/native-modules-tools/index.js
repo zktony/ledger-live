@@ -9,7 +9,7 @@ function copyFolderRecursivelySync(source, target) {
 
   if (fs.statSync(source).isDirectory()) {
     const files = fs.readdirSync(source);
-    files.forEach(function (file) {
+    files.forEach(function(file) {
       var curSource = path.join(source, file);
       if (fs.statSync(curSource).isDirectory()) {
         copyFolderRecursivelySync(curSource, path.join(target, file));
@@ -173,7 +173,7 @@ function dependencyTree(modulePath, { root } = {}) {
 // Populates an 'externals' function given a list of native modules.
 // See: https://webpack.js.org/configuration/externals
 function buildWebpackExternals(nativeModules) {
-  return function ({ context, request }, callback) {
+  return function({ context, request }, callback) {
     try {
       const resolvedPath = require.resolve(request, { paths: [context] });
       const realResolvedPath = fs.realpathSync(resolvedPath);
@@ -191,6 +191,38 @@ function buildWebpackExternals(nativeModules) {
     }
 
     callback();
+  };
+}
+
+// Populates an 'externals' plugin given a list of native modules.
+// See: https://esbuild.github.io/plugins/#on-resolve
+function esBuildExternalsPlugin(nativeModules) {
+  return {
+    name: "Externals Plugin (native-modules-tools)",
+    setup(build) {
+      build.onResolve({ filter: /.*/ }, (args) => {
+        try {
+          const resolvedPath = require.resolve(args.path, {
+            paths: [args.resolveDir],
+          });
+          const realResolvedPath = fs.realpathSync(resolvedPath);
+          const resolvedRoot = findPackageRoot(realResolvedPath);
+          const nativeModule = nativeModules[resolvedRoot];
+          if (nativeModule) {
+            return {
+              path: args.path.replace(
+                new RegExp(`^${nativeModule.name}`),
+                nativeModule.name + "@" + nativeModule.version
+              ),
+              external: true,
+            };
+          }
+        } catch (error) {
+          // swallow error
+          // console.error(error);
+        }
+      });
+    },
   };
 }
 
@@ -238,6 +270,7 @@ module.exports = {
   copyNodeModule,
   dependencyTree,
   buildWebpackExternals,
+  esBuildExternalsPlugin,
   copyFolderRecursivelySync,
   processNativeModules,
 };
